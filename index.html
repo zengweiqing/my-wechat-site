@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能体API交互界面 - 流式响应版</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; }
+        body { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
+        .container { width: 100%; max-width: 900px; background: white; border-radius: 16px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); overflow: hidden; display: flex; flex-direction: column; height: 90vh; }
+        header { background: linear-gradient(90deg, #4b6cb7 0%, #182848 100%); color: white; padding: 20px; text-align: center; }
+        .main-content { display: flex; flex: 1; overflow: hidden; }
+        .config-panel { width: 300px; background: #f8f9fa; padding: 20px; border-right: 1px solid #eaeaea; overflow-y: auto; }
+        .chat-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .chat-messages { flex: 1; padding: 20px; overflow-y: auto; background: #f9f9f9; }
+        .message { margin-bottom: 16px; display: flex; }
+        .user-message { justify-content: flex-end; }
+        .agent-message { justify-content: flex-start; }
+        .message-bubble { max-width: 70%; padding: 12px 16px; border-radius: 18px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05); }
+        .user-bubble { background: #4b6cb7; color: white; border-bottom-right-radius: 4px; }
+        .agent-bubble { background: white; border: 1px solid #eaeaea; border-bottom-left-radius: 4px; }
+        .chat-input { padding: 20px; border-top: 1px solid #eaeaea; background: white; }
+        .input-group { display: flex; gap: 10px; }
+        .input-group input { flex: 1; padding: 12px 16px; border: 1px solid #ddd; border-radius: 24px; outline: none; font-size: 1rem; }
+        .input-group input:focus { border-color: #4b6cb7; }
+        .input-group button { background: #4b6cb7; color: white; border: none; border-radius: 24px; padding: 12px 24px; cursor: pointer; font-weight: 600; }
+        .input-group button:disabled { background: #cccccc; cursor: not-allowed; }
+        .typing-indicator { display: none; padding: 12px 16px; background: white; border: 1px solid #eaeaea; border-radius: 18px; border-bottom-left-radius: 4px; max-width: 70%; margin-bottom: 16px; }
+        .debug-info { background: #f8f9fa; padding: 10px; margin: 10px 0; border-radius: 6px; font-size: 0.8rem; }
+        @keyframes typing { 0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; } 40% { transform: scale(1); opacity: 1; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>智能体API交互界面 - 流式响应版</h1>
+            <p>使用流式API解决异步问题</p>
+        </header>
+        <div class="main-content">
+            <div class="config-panel">
+                <div class="config-section">
+                    <h3>API配置</h3>
+                    <div class="form-group">
+                        <label>API端点URL</label>
+                        <input type="text" value="https://api.coze.cn/v3/chat" readonly style="background: #f0f0f0;">
+                    </div>
+                    <div class="form-group">
+                        <label>Bot ID</label>
+                        <input type="text" value="7569109458598068262" readonly style="background: #f0f0f0;">
+                    </div>
+                    <div class="debug-info">
+                        <strong>模式:</strong> 流式响应<br>
+                        <strong>状态:</strong> 就绪
+                    </div>
+                </div>
+            </div>
+            <div class="chat-panel">
+                <div class="chat-messages" id="chat-messages">
+                    <div class="message agent-message">
+                        <div class="message-bubble agent-bubble">
+                            🚀 使用流式响应模式
+                            <br><br>
+                            解决异步处理问题，实时接收回复。
+                        </div>
+                    </div>
+                </div>
+                <div class="typing-indicator" id="typing-indicator">
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <div style="display: flex; gap: 4px;">
+                            <div style="width: 8px; height: 8px; background: #bbb; border-radius: 50%; animation: typing 1.4s infinite ease-in-out;"></div>
+                            <div style="width: 8px; height: 8px; background: #bbb; border-radius: 50%; animation: typing 1.4s infinite ease-in-out; animation-delay: -0.16s;"></div>
+                            <div style="width: 8px; height: 8px; background: #bbb; border-radius: 50%; animation: typing 1.4s infinite ease-in-out; animation-delay: -0.32s;"></div>
+                        </div>
+                        <span style="margin-left: 8px; font-size: 0.9rem; color: #666;">思考中...</span>
+                    </div>
+                </div>
+                <div class="chat-input">
+                    <div class="input-group">
+                        <input type="text" id="user-input" placeholder="输入您的问题...">
+                        <button id="send-btn">发送</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const chatMessages = document.getElementById('chat-messages');
+            const userInput = document.getElementById('user-input');
+            const sendBtn = document.getElementById('send-btn');
+            const typingIndicator = document.getElementById('typing-indicator');
+
+            const API_URL = 'https://api.coze.cn/v3/chat';
+            const API_KEY = 'pat_Nrcws8AafBblujiFeGjIJsQ6crIxrjV6V1kynos2IWqqQg0eKzuPBP4RfVRBPkYP';
+            const BOT_ID = '7569109458598068262';
+
+            function sendMessage() {
+                const message = userInput.value.trim();
+                if (!message) return;
+                
+                addMessageToChat('user', message);
+                userInput.value = '';
+                sendBtn.disabled = true;
+                
+                showTypingIndicator();
+                
+                // 尝试流式响应
+                sendToCozeAPIStream(message);
+            }
+
+            function addMessageToChat(sender, text, messageId = null) {
+                let messageDiv;
+                let bubbleDiv;
+                
+                if (messageId && document.getElementById(messageId)) {
+                    // 更新现有消息
+                    messageDiv = document.getElementById(messageId);
+                    bubbleDiv = messageDiv.querySelector('.message-bubble');
+                    bubbleDiv.textContent = text;
+                } else {
+                    // 创建新消息
+                    messageDiv = document.createElement('div');
+                    messageDiv.className = `message ${sender}-message`;
+                    if (messageId) messageDiv.id = messageId;
+                    
+                    bubbleDiv = document.createElement('div');
+                    bubbleDiv.className = `message-bubble ${sender}-bubble`;
+                    bubbleDiv.textContent = text;
+                    
+                    messageDiv.appendChild(bubbleDiv);
+                    chatMessages.appendChild(messageDiv);
+                }
+                
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            
+            function showTypingIndicator() {
+                typingIndicator.style.display = 'block';
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            
+            function hideTypingIndicator() {
+                typingIndicator.style.display = 'none';
+            }
+            
+            async function sendToCozeAPIStream(message) {
+                try {
+                    console.log('尝试流式请求...');
+                    
+                    const requestBody = {
+                        bot_id: BOT_ID,
+                        user_id: "user_001",
+                        stream: true,  // 启用流式响应
+                        auto_save_history: true,
+                        additional_messages: [{
+                            role: "user",
+                            content: message,
+                            content_type: "text"
+                        }]
+                    };
+
+                    const response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${API_KEY}`,
+                            'Accept': 'text/event-stream'  // 接受流式响应
+                        },
+                        body: JSON.stringify(requestBody)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let accumulatedText = '';
+                    const messageId = 'streaming-message-' + Date.now();
+                    
+                    // 创建初始消息容器
+                    addMessageToChat('agent', '...', messageId);
+                    
+                    hideTypingIndicator();
+
+                    try {
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            
+                            if (done) {
+                                console.log('流式响应结束');
+                                break;
+                            }
+                            
+                            const chunk = decoder.decode(value, { stream: true });
+                            console.log('收到数据块:', chunk);
+                            
+                            // 处理流式数据（这里需要根据Coze的实际流式格式调整）
+                            accumulatedText += chunk;
+                            
+                            // 更新显示
+                            addMessageToChat('agent', accumulatedText, messageId);
+                        }
+                    } finally {
+                        reader.releaseLock();
+                    }
+                    
+                    // 如果流式失败，回退到普通请求
+                    if (!accumulatedText || accumulatedText === '...') {
+                        console.log('流式无数据，尝试普通请求...');
+                        await sendToCozeAPIRegular(message);
+                    }
+                    
+                } catch (error) {
+                    console.error('流式请求错误:', error);
+                    // 流式失败，回退到普通请求
+                    await sendToCozeAPIRegular(message);
+                } finally {
+                    sendBtn.disabled = false;
+                }
+            }
+
+            async function sendToCozeAPIRegular(message) {
+                try {
+                    console.log('尝试普通请求...');
+                    
+                    const requestBody = {
+                        bot_id: BOT_ID,
+                        user_id: "user_001",
+                        stream: false,
+                        auto_save_history: true,
+                        additional_messages: [{
+                            role: "user",
+                            content: message,
+                            content_type: "text"
+                        }]
+                    };
+
+                    const response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${API_KEY}`,
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify(requestBody)
+                    });
+
+                    const data = await response.json();
+                    console.log('普通响应:', data);
+                    
+                    hideTypingIndicator();
+                    
+                    if (data.messages && data.messages.length > 0) {
+                        const assistantMessage = data.messages.find(msg => msg.role === 'assistant');
+                        if (assistantMessage && assistantMessage.content) {
+                            addMessageToChat('agent', assistantMessage.content);
+                        } else {
+                            addMessageToChat('agent', '收到回复但无法解析内容');
+                        }
+                    } else if (data.data && data.data.status === 'in_progress') {
+                        // 如果是异步处理，显示提示
+                        addMessageToChat('agent', '⏳ Bot正在处理您的请求，这可能需要一些时间...');
+                    } else {
+                        addMessageToChat('agent', `响应: ${JSON.stringify(data)}`);
+                    }
+                    
+                } catch (error) {
+                    hideTypingIndicator();
+                    console.error('普通请求错误:', error);
+                    addMessageToChat('agent', `错误: ${error.message}`);
+                }
+            }
+
+            // 事件监听
+            sendBtn.addEventListener('click', sendMessage);
+            userInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
